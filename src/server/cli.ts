@@ -22,6 +22,16 @@ if (argv[0] === 'tunnel') {
   const { tunnelCommand } = await import('./tunnel/index.js');
   process.exit(await tunnelCommand(argv.slice(1)));
 }
+if (argv[0] === 'docker') {
+  const { dockerCommand } = await import('./docker/index.js');
+  process.exit(await dockerCommand(argv.slice(1)));
+}
+if (argv[0] === 'sign-in-link') {
+  const { signInLinkCommand } = await import('./docker/inside.js');
+  process.exit(await signInLinkCommand());
+}
+// Started by `agent-office docker` (deploy/container/start.sh's local mode).
+const inDocker = process.env.AGENT_OFFICE_LOCAL_MODE === '1';
 
 const cfg = loadConfig(argv);
 await ensureSelfSigned(cfg);
@@ -63,6 +73,7 @@ function floorsLine() {
 function passwordLine() {
   if (!office.accounts.sharedPassword) return 'off — everyone signs in with their own account (agent-office accounts)';
   if (!cfg.passwordGenerated) return '(from --password / AGENT_OFFICE_PASSWORD)';
+  if (inDocker) return 'never shown: agent-office docker opens your browser signed in';
   if (cfg.claimToken && !cfg.claimed) return 'shown exactly once to whoever opens the claim link (/claim?t=…)';
   if (cfg.claimed || !cfg.password) return '(already claimed — never shown again; reset with --reset-password)';
   return cfg.password;
@@ -77,6 +88,7 @@ if (atTerminal && office.accounts.sharedPassword && !cfg.claimToken) {
   signIn = here + office.signInLink();
   if (cfg.open) opened = openBrowser(signIn);
 }
+if (inDocker && office.accounts.sharedPassword) (await import('./docker/inside.js')).serveSignInLinks(cfg.dataDir, office.signInLink);
 
 // Started in a project that's still one of the floors (it can be taken off like any other).
 const local = cfg.project && office.floors().some((f) => path.resolve(f.def.dir) === cfg.project);
@@ -90,7 +102,7 @@ ${signIn ? `\n  sign in: ${signIn}\n           ${opened ? 'opened in your browse
   password: ${passwordLine()}
   default agent: ${[agent ?? `${cfg.agentCmd} (via login shell)`, ...cfg.agentArgs].join(' ')}
   choose a provider (including Pi and Cursor) when hiring or queueing a task
-${cfg.tls || loopback ? '' : '\n  tip: voice & screen share need https off localhost — use a reverse proxy or --self-signed\n'}`);
+${cfg.tls || loopback || inDocker ? '' : '\n  tip: voice & screen share need https off localhost — use a reverse proxy or --self-signed\n'}`);
 
 let closing = false;
 // SIGTERM is a restart (tsx watch reloading, a plain `kill`, systemd): workers keep running in their
