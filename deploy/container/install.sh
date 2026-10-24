@@ -9,6 +9,9 @@ PROVISION=/opt/agent-office/deploy/provision.sh
 usermod --login agentoffice --home /data/home --shell /bin/bash --password '*' node
 groupmod --new-name agentoffice node
 rm -rf /home/node
+# The throwaway Postgres 16 a project's tests start puts its socket in /var/run/postgresql by default,
+# which only the postgres group can write to.
+usermod --append --groups postgres agentoffice
 
 # The team helper, the tunnel-only login and sshd's limits for `office` are provision.sh's own, so
 # servers and containers share one copy of them (and of the Claude Code onboarding it pre-accepts).
@@ -46,7 +49,7 @@ KbdInteractiveAuthentication no
 PermitRootLogin no
 AllowUsers agentoffice office
 # The keys in AGENT_OFFICE_ADMIN_KEYS, written there by start.sh at every start. Commands run
-# over ssh find Claude Code in ~/.local/bin, as the office does.
+# over ssh find Claude Code and Codex in ~/.local/bin, as the office does.
 Match User agentoffice
     AuthorizedKeysFile .ssh/authorized_keys /etc/agent-office/admin_keys
     SetEnv PATH=/data/home/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

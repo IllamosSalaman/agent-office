@@ -182,7 +182,7 @@ deploy/railway.sh up --claude-token "$(claude setup-token)"
 
 In about five minutes, `up`:
 
-1. Creates a Railway project with one service, built from this checkout with [`deploy/container/Dockerfile`](deploy/container/Dockerfile): Node 22, git, the GitHub CLI and sshd, with Claude Code installed on first start.
+1. Creates a Railway project with one service, built from this checkout with [`deploy/container/Dockerfile`](deploy/container/Dockerfile): Node 24 with pnpm, git, the GitHub CLI, Postgres 16, Playwright's system libraries and sshd, with Claude Code and Codex installed on first start.
 2. Adds a **volume on `/data`** for everything the office keeps: the password, accounts, floors and settings, the projects, Claude's and GitHub's sign-ins, teammates' keys and the SSH host key. Restarts and redeploys replace the container, never the volume.
 3. Puts Railway's **TCP proxy** in front of the container's SSH, and nothing else. The office listens on `127.0.0.1:4600` inside the container and has no public URL: everyone reaches it through an SSH tunnel, as on AWS.
 4. Opens a tunnel and your browser at http://localhost:4600. **The first page shows the office password once. Write it down.**

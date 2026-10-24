@@ -4,8 +4,10 @@
 #
 # Everything that has to outlive a restart or a redeploy lives on the volume at /data:
 #   /data/home   agentoffice's home: the office's data in ~/agent-office (password, accounts, floors,
-#                chat, per-account sign-ins), the projects in ~/workspace, Claude Code and its sign-in
-#                (~/.local, ~/.claude, ~/.claude.json), the GitHub CLI's (~/.config/gh), ~/.gitconfig
+#                chat, per-account sign-ins), the projects in ~/workspace, Claude Code and Codex and
+#                their sign-ins (~/.local, ~/.claude, ~/.claude.json, ~/.codex), the GitHub CLI's
+#                (~/.config/gh), ~/.gitconfig, and the Playwright browsers and pnpm versions projects
+#                download (~/.cache)
 #   /data/ssh    the SSH host key, so ssh keeps trusting the office after a redeploy
 #   /data/team   teammates' keys (office's authorized_keys), from 👥 Invite teammates
 set -euo pipefail
@@ -60,6 +62,15 @@ if [[ ! -x $RUN_HOME/.local/bin/claude ]]; then
   say "installing Claude Code in $RUN_HOME/.local (first start)"
   "${AS_USER[@]}" bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >/dev/null ||
     say "couldn't install Claude Code; it's tried again at the next start"
+fi
+# Codex goes in ~/.local too, with npm's global prefix there, so its own updates (an `npm install -g`)
+# need no root and land on the volume.
+if [[ ! -x $RUN_HOME/.local/bin/codex ]]; then
+  say "installing Codex in $RUN_HOME/.local (first start)"
+  grep -qs '^prefix *=' $RUN_HOME/.npmrc ||
+    "${AS_USER[@]}" npm config set prefix $RUN_HOME/.local --location=user
+  "${AS_USER[@]}" npm install -g --prefix $RUN_HOME/.local --no-audit --no-fund @openai/codex >/dev/null ||
+    say "couldn't install Codex; it's tried again at the next start"
 fi
 "${AS_USER[@]}" mkdir -p $RUN_HOME/workspace
 # Once: after that, the folder is the admins' to move in ⚙️ Settings.
