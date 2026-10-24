@@ -21,6 +21,7 @@
     "build:server": "tsc -p tsconfig.server.json",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "start": "node bin/agent-office.js",
+    "docker": "tsx src/server/cli.ts docker",
     "prepare": "npm run build"
   },
   "engines": {

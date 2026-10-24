@@ -24,7 +24,7 @@ What `up` does, in about five minutes the first time:
 2. Creates a Dokploy project named after the office, with one application, `office`. It runs on Dokploy's own server, or on one of its remote servers with `--server <name>` (on Dokploy Cloud, you need one).
 3. Mounts a **Docker volume on `/data`**. Everything the office keeps is on it (see below).
 4. Publishes the container's SSH on **port 2222 of the server** (pick another with `--ssh-port`). That's the only way in: the application has no domain, so Traefik never routes to it, and the office itself is never on the internet.
-5. Zips this checkout and uploads it, and Dokploy builds it with [`deploy/container/Dockerfile`](../deploy/container/Dockerfile): Node 22, git, the GitHub CLI, build tools and sshd. The zip holds what `git add -A` would see: your uncommitted changes and new files included, anything `.gitignore` leaves out left out, and no `.env` files or keys. **Claude Code** is installed onto the volume the first time the office starts, so it keeps updating itself. Docker Swarm restarts the container if it crashes.
+5. Zips this checkout and uploads it, and Dokploy builds it with [`deploy/container/Dockerfile`](../deploy/container/Dockerfile): Node 24 with pnpm through corepack, git, the GitHub CLI, build tools, Postgres 16's server programs (never started: for the throwaway databases a project's tests start), Playwright's system libraries and sshd. The zip holds what `git add -A` would see: your uncommitted changes and new files included, anything `.gitignore` leaves out left out, and no `.env` files or keys. **Claude Code** and **Codex** are installed onto the volume the first time the office starts, so they keep updating themselves. Docker Swarm restarts the container if it crashes.
 6. Signs the GitHub CLI in with your local `gh auth token` (kept on the volume), and gives git your name and email.
 7. Opens an SSH tunnel and your browser at `http://localhost:4600`. **The first page shows the office password once. Write it down.** The office then keeps only a hash of it.
 
@@ -38,7 +38,8 @@ The office listens on `127.0.0.1:4600` inside its container, and everyone reache
 | --- | --- |
 | `/data/home/agent-office` | The office's own data: the password hash, accounts and invites, floors, chat, settings, arcade scores, each account's own Claude and GitHub sign-ins |
 | `/data/home/workspace` | The projects, cloned as `<owner>/<repo>`, with the workers' worktrees |
-| `/data/home/.local`, `.claude`, `.claude.json` | Claude Code itself, its sign-in, and the sessions workers resume |
+| `/data/home/.local`, `.claude`, `.claude.json`, `.codex` | Claude Code and Codex themselves, their sign-ins, and the sessions workers resume |
+| `/data/home/.cache` | The Playwright browsers and pnpm versions projects download, so they're fetched once |
 | `/data/home/.config/gh`, `.gitconfig` | The GitHub CLI's sign-in and git's name and email |
 | `/data/ssh` | The SSH host key, so ssh still trusts the office after a redeploy |
 | `/data/team` | Teammates' SSH keys, from **👥 Invite teammates** |
@@ -70,7 +71,7 @@ deploy/dokploy.sh ssh | logs           # a shell in the container / follow the o
 
 **Claude sign-in.** Pass `--claude-token "$(claude setup-token)"` (your Claude subscription) or `--anthropic-api-key <key>`; either becomes an environment variable of the application. Or pass neither, and run `/login` in the first worker's terminal: that sign-in is kept on the volume.
 
-**GitHub.** By default your local `gh auth token` signs the GitHub CLI in, in the office. Anyone who can use the office can use that token, so pass `--github-token <fine-grained token>` or `--no-github-token` if that's too much. Codex and OpenCode aren't in the image: add them to `deploy/container/Dockerfile` if you use them.
+**GitHub.** By default your local `gh auth token` signs the GitHub CLI in, in the office. Anyone who can use the office can use that token, so pass `--github-token <fine-grained token>` or `--no-github-token` if that's too much. OpenCode isn't in the image: add it to `deploy/container/Dockerfile` if you use it.
 
 **Other settings.** The office reads the same environment variables as anywhere else ([configuration](configuration.md)). Add them on the application's **Environment** tab in Dokploy, like `AGENT_OFFICE_CITY=Portland, Oregon`, then run `deploy/dokploy.sh restart`. `up` sets only its own variables there and keeps the rest.
 
