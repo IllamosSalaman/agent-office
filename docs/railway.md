@@ -23,7 +23,7 @@ What `up` does, in about five minutes the first time:
 2. Creates a Railway project named after the office, with one service, `office`. In more than one Railway workspace? Pick one with `--workspace <name>`.
 3. Adds a **volume on `/data`**. Everything the office keeps is on it (see below).
 4. Adds a **TCP proxy** in front of the container's port 22, something like `zephyr.proxy.rlwy.net:17738`. That's the only way in: the service never gets an HTTP domain, so the office itself is never on the internet.
-5. Builds this checkout with [`deploy/container/Dockerfile`](../deploy/container/Dockerfile): Node 22, git, the GitHub CLI, build tools and sshd. **Claude Code** is installed onto the volume the first time the office starts, so it keeps updating itself. The restart policy is *Always*, so a crash brings it straight back.
+5. Builds this checkout with [`deploy/container/Dockerfile`](../deploy/container/Dockerfile): Node 24 with pnpm through corepack, git, the GitHub CLI, build tools, Postgres 16's server programs (in `/usr/lib/postgresql/16/bin`, for the throwaway databases a project's tests start; nothing starts them), the system libraries Playwright's Chromium needs (a project's own `npx playwright install chromium` downloads the browser onto the volume) and sshd. **Claude Code** and **Codex** are installed onto the volume the first time the office starts, so they keep updating themselves. The restart policy is *Always*, so a crash brings it straight back.
 6. Signs the GitHub CLI in with your local `gh auth token` (kept on the volume), and gives git your name and email.
 7. Opens an SSH tunnel and your browser at `http://localhost:4600`. **The first page shows the office password once. Write it down.** The office then keeps only a hash of it.
 
@@ -35,7 +35,8 @@ The office listens on `127.0.0.1:4600` inside its container, and everyone reache
 | --- | --- |
 | `/data/home/agent-office` | The office's own data: the password hash, accounts and invites, floors, chat, settings, arcade scores, each account's own Claude and GitHub sign-ins |
 | `/data/home/workspace` | The projects, cloned as `<owner>/<repo>`, with the workers' worktrees |
-| `/data/home/.local`, `.claude`, `.claude.json` | Claude Code itself, its sign-in, and the sessions workers resume |
+| `/data/home/.local`, `.claude`, `.claude.json`, `.codex` | Claude Code and Codex themselves, their sign-ins, and the sessions workers resume |
+| `/data/home/.cache` | The Playwright browsers and pnpm versions projects download, so they're fetched once |
 | `/data/home/.config/gh`, `.gitconfig` | The GitHub CLI's sign-in and git's name and email |
 | `/data/ssh` | The SSH host key, so ssh still trusts the office after a redeploy |
 | `/data/team` | Teammates' SSH keys, from **👥 Invite teammates** |
@@ -67,7 +68,7 @@ deploy/railway.sh ssh | logs           # a shell in the container / follow the o
 
 **Claude sign-in.** Pass `--claude-token "$(claude setup-token)"` (your Claude subscription) or `--anthropic-api-key <key>`; either becomes a variable on the service. Or pass neither, and run `/login` in the first worker's terminal: that sign-in is kept on the volume.
 
-**GitHub.** By default your local `gh auth token` signs the GitHub CLI in, in the office. Anyone who can use the office can use that token, so pass `--github-token <fine-grained token>` or `--no-github-token` if that's too much. Codex and OpenCode aren't in the image: add them to `deploy/container/Dockerfile` if you use them.
+**GitHub.** By default your local `gh auth token` signs the GitHub CLI in, in the office. Anyone who can use the office can use that token, so pass `--github-token <fine-grained token>` or `--no-github-token` if that's too much. OpenCode isn't in the image: add it to `deploy/container/Dockerfile` if you use it.
 
 **Other settings.** The office reads the same environment variables as anywhere else ([configuration](configuration.md)). Set them on the service from `~/.config/agent-office/railway/<name>/`, which is linked to it: `cd ~/.config/agent-office/railway/agent-office && railway variable set AGENT_OFFICE_CITY="Portland, Oregon"`. Setting a variable redeploys the office.
 

@@ -9,7 +9,7 @@
 # the tunnel. Everything that has to outlive a restart or a redeploy is on the volume (start.sh).
 #
 # Build it from the repository root: docker build -f deploy/container/Dockerfile .
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /opt/agent-office
 COPY package.json package-lock.json ./
 # No install scripts: `prepare` would build before the sources are here.
@@ -19,8 +19,10 @@ COPY . .
 RUN chmod 755 bin/*.js deploy/container/*.sh \
   && npm run build && npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
-FROM node:22-bookworm-slim
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+FROM node:24-bookworm-slim
+# COREPACK_ENABLE_DOWNLOAD_PROMPT=0: corepack fetches the pnpm (or yarn) a project's packageManager
+# names without stopping to ask, which would hang a worker.
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # sshd for the tunnels, tini to reap what workers leave behind, `ss` (iproute2) for the office to
 # find the web servers workers start, and what workers need: git, the GitHub CLI (from GitHub's own
 # apt repo, like deploy/provision.sh) and build tools.
@@ -34,6 +36,24 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/*
+# What workers' own projects need to build and test:
+# - pnpm (and yarn) through corepack, at the version a project's packageManager names.
+# - Postgres 16's server programs from PostgreSQL's own apt repo, in /usr/lib/postgresql/16/bin, for
+#   the throwaway databases a project's tests start themselves. Installed only: no cluster is made,
+#   and nothing starts it.
+# - The system libraries Playwright's Chromium needs, with no browser: a project's own
+#   `playwright install chromium` puts its matching browser in ~/.cache on the volume, without root.
+RUN corepack enable \
+  && curl -fsSLo /etc/apt/keyrings/postgresql.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  && chmod go+r /etc/apt/keyrings/postgresql.asc \
+  && echo "deb [signed-by=/etc/apt/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+    >/etc/apt/sources.list.d/pgdg.list \
+  && install -d -m 755 /etc/postgresql-common/createcluster.d \
+  && echo 'create_main_cluster = false' >/etc/postgresql-common/createcluster.d/agent-office.conf \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-16 \
+  && npx --yes playwright install-deps chromium \
+  && rm -rf /var/lib/apt/lists/* /root/.npm
 COPY --from=build /opt/agent-office /opt/agent-office
 RUN /opt/agent-office/deploy/container/install.sh
 EXPOSE 22

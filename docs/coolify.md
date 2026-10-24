@@ -34,7 +34,7 @@ What `up` does, in about five minutes the first time:
 3. Adds a **persistent storage on `/data`**: a Docker volume Coolify names after the application, like `x1y2z3…-data`. Everything the office keeps is on it (see below).
 4. Publishes the container's SSH on **port 2222 of the server** (a ports mapping, `2222:22`; pick another port with `--ssh-port`). That's the only way in: the application has no domain (`up` turns Coolify's generated domain off, and takes off any domain added later), so Coolify's proxy never routes to it, and the office itself is never on the internet.
 5. Sets the office's own environment variables as **runtime only**, never build variables, which Coolify passes to the build as arguments. It also adds `PORT` and `HOST` with runtime and build time both off: they reach nothing, but they keep Coolify from giving the container `PORT=22` and `HOST=0.0.0.0` of its own, which workers' dev servers would pick up.
-6. Pins the application to HEAD's commit and has Coolify deploy it: Coolify clones the repository, builds [`deploy/container/Dockerfile`](../deploy/container/Dockerfile) (Node 22, git, the GitHub CLI, build tools and sshd) and starts the container. Its health check runs `curl -fs http://127.0.0.1:4600/api/health` in the container, so Coolify shows whether the office is up. **Claude Code** is installed onto the volume the first time the office starts, so it keeps updating itself.
+6. Pins the application to HEAD's commit and has Coolify deploy it: Coolify clones the repository, builds [`deploy/container/Dockerfile`](../deploy/container/Dockerfile) (Node 24 with pnpm through corepack, git, the GitHub CLI, build tools, Postgres 16's server programs, never started, Playwright's system libraries and sshd) and starts the container. Its health check runs `curl -fs http://127.0.0.1:4600/api/health` in the container, so Coolify shows whether the office is up. **Claude Code** and **Codex** are installed onto the volume the first time the office starts, so they keep updating themselves.
 7. Signs the GitHub CLI in with your local `gh auth token` (kept on the volume), and gives git your name and email.
 8. Opens an SSH tunnel and your browser at `http://localhost:4600`. **The first page shows the office password once. Write it down.** The office then keeps only a hash of it.
 
@@ -50,7 +50,8 @@ The office listens on `127.0.0.1:4600` inside its container, and everyone reache
 | --- | --- |
 | `/data/home/agent-office` | The office's own data: the password hash, accounts and invites, floors, chat, settings, arcade scores, each account's own Claude and GitHub sign-ins |
 | `/data/home/workspace` | The projects, cloned as `<owner>/<repo>`, with the workers' worktrees |
-| `/data/home/.local`, `.claude`, `.claude.json` | Claude Code itself, its sign-in, and the sessions workers resume |
+| `/data/home/.local`, `.claude`, `.claude.json`, `.codex` | Claude Code and Codex themselves, their sign-ins, and the sessions workers resume |
+| `/data/home/.cache` | The Playwright browsers and pnpm versions projects download, so they're fetched once |
 | `/data/home/.config/gh`, `.gitconfig` | The GitHub CLI's sign-in and git's name and email |
 | `/data/ssh` | The SSH host key, so ssh still trusts the office after a redeploy |
 | `/data/team` | Teammates' SSH keys, from **👥 Invite teammates** |
@@ -82,7 +83,7 @@ deploy/coolify.sh ssh | logs           # a shell in the container / follow the o
 
 **Claude sign-in.** Pass `--claude-token "$(claude setup-token)"` (your Claude subscription) or `--anthropic-api-key <key>`; either becomes a runtime environment variable of the application. Or pass neither, and run `/login` in the first worker's terminal: that sign-in is kept on the volume.
 
-**GitHub.** By default your local `gh auth token` signs the GitHub CLI in, in the office: it goes over SSH, never into an environment variable. Anyone who can use the office can use that token, so pass `--github-token <fine-grained token>` or `--no-github-token` if that's too much. Codex and OpenCode aren't in the image: add them to `deploy/container/Dockerfile` if you use them.
+**GitHub.** By default your local `gh auth token` signs the GitHub CLI in, in the office: it goes over SSH, never into an environment variable. Anyone who can use the office can use that token, so pass `--github-token <fine-grained token>` or `--no-github-token` if that's too much. OpenCode isn't in the image: add it to `deploy/container/Dockerfile` if you use it.
 
 **Other settings.** The office reads the same environment variables as anywhere else ([configuration](configuration.md)). Add them on the application's **Environment Variables** tab in Coolify, like `AGENT_OFFICE_CITY=Portland, Oregon`, leave **Build Variable** off for anything secret, then run `deploy/coolify.sh restart`. `up` sets only its own variables there and keeps the rest.
 
