@@ -23,7 +23,7 @@ What `up` does, in a few minutes the first time:
 2. Creates a Fly app named after the office with a random suffix, like `agent-office-3f9a1c` (app names are unique across all of Fly.io; pick your own with `--app`). In more than one Fly organization? Pick one with `--org <slug>`.
 3. Adds a **50 GB volume on `/data`** (`--disk` for another size) in the Fly region nearest you (`--region` for another; `fly platform regions` lists them). Everything the office keeps is on it (see below).
 4. Gives the app a **dedicated IPv4 address**, with SSH on a random port, something like `137.66.12.34:31337`. That's the only way in. The app has no HTTP service, so nothing answers on `<app>.fly.dev`, and the office itself is never on the internet. The address is dedicated because Fly's shared IPv4 addresses only carry HTTP and TLS.
-5. Builds this checkout with [`deploy/container/Dockerfile`](../deploy/container/Dockerfile) on Fly's remote builder: the same image as on [Railway](railway.md), with Node 22, git, the GitHub CLI, build tools and sshd. **Claude Code** is installed onto the volume the first time the office starts, so it keeps updating itself. It runs on one machine, a `shared-cpu-4x` with 8 GB (`--vm-size` and `--memory` change it). Fly never stops it for being idle, and its restart policy is *always*, so a crash brings it straight back.
+5. Builds this checkout with [`deploy/container/Dockerfile`](../deploy/container/Dockerfile) on Fly's remote builder: the same image as on [Railway](railway.md), with Node 24 and pnpm through corepack, git, the GitHub CLI, build tools, Postgres 16's server programs (never started: for the throwaway databases a project's tests start), Playwright's system libraries and sshd. **Claude Code** and **Codex** are installed onto the volume the first time the office starts, so they keep updating themselves. It runs on one machine, a `shared-cpu-4x` with 8 GB (`--vm-size` and `--memory` change it). Fly never stops it for being idle, and its restart policy is *always*, so a crash brings it straight back.
 6. Signs the GitHub CLI in with your local `gh auth token` (kept on the volume), and gives git your name and email.
 7. Opens an SSH tunnel and your browser at `http://localhost:4600`. **The first page shows the office password once. Write it down.** The office then keeps only a hash of it.
 
@@ -35,7 +35,8 @@ The office listens on `127.0.0.1:4600` in its machine, and everyone reaches it t
 | --- | --- |
 | `/data/home/agent-office` | The office's own data: the password hash, accounts and invites, floors, chat, settings, arcade scores, each account's own Claude and GitHub sign-ins |
 | `/data/home/workspace` | The projects, cloned as `<owner>/<repo>`, with the workers' worktrees |
-| `/data/home/.local`, `.claude`, `.claude.json` | Claude Code itself, its sign-in, and the sessions workers resume |
+| `/data/home/.local`, `.claude`, `.claude.json`, `.codex` | Claude Code and Codex themselves, their sign-ins, and the sessions workers resume |
+| `/data/home/.cache` | The Playwright browsers and pnpm versions projects download, so they're fetched once |
 | `/data/home/.config/gh`, `.gitconfig` | The GitHub CLI's sign-in and git's name and email |
 | `/data/ssh` | The SSH host key, so ssh still trusts the office after a redeploy |
 | `/data/team` | Teammates' SSH keys, from **👥 Invite teammates** |
@@ -74,7 +75,7 @@ deploy/fly.sh ssh | logs              # a shell in the machine / follow the offi
 
 **Claude sign-in.** Pass `--claude-token "$(claude setup-token)"` (your Claude subscription) or `--anthropic-api-key <key>`; either becomes a secret on the app. Or pass neither, and run `/login` in the first worker's terminal: that sign-in is kept on the volume.
 
-**GitHub.** By default your local `gh auth token` signs the GitHub CLI in, in the office. Anyone who can use the office can use that token, so pass `--github-token <fine-grained token>` or `--no-github-token` if that's too much. Codex and OpenCode aren't in the image: add them to `deploy/container/Dockerfile` if you use them.
+**GitHub.** By default your local `gh auth token` signs the GitHub CLI in, in the office. Anyone who can use the office can use that token, so pass `--github-token <fine-grained token>` or `--no-github-token` if that's too much. OpenCode isn't in the image: add it to `deploy/container/Dockerfile` if you use it.
 
 **Other settings.** The office reads the same environment variables as anywhere else ([configuration](configuration.md)). Set them as secrets on the app: `fly secrets set -a <app> AGENT_OFFICE_CITY="Portland, Oregon"`. That restarts the machine. Don't edit the `fly.toml` in `~/.config/agent-office/fly/<name>/`, because `deploy/fly.sh` writes it again before every deploy.
 
