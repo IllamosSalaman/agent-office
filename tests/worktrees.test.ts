@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Changes } from '../src/server/changes.js';
@@ -162,4 +162,91 @@ test('a worktree deleted with its branch comes back from origin when it was push
   f.git('checkout', '-q', made.branch);
   const refused = await trees.restore(made);
   assert.ok('error' in refused && /already (checked out|used by worktree)/.test(refused.error), JSON.stringify(refused));
+});
+
+/** Commits `.gitignore` and `.worktreeinclude` with these lines, as a project that uses them would. */
+function include(f: ReturnType<typeof fixture>, ignore: string[], patterns: string[]) {
+  writeFileSync(path.join(f.dir, '.gitignore'), ignore.join('\n') + '\n');
+  writeFileSync(path.join(f.dir, '.worktreeinclude'), patterns.join('\n') + '\n');
+  f.git('add', '.gitignore', '.worktreeinclude');
+  f.git('commit', '-qm', 'include');
+}
+
+test('a new worktree gets the gitignored files .worktreeinclude lists, with their contents and permissions', (t) => {
+  const f = fixture(t);
+  include(f, ['.env.local'], ['.env.local']);
+  writeFileSync(path.join(f.dir, '.env.local'), 'DATABASE_URL=postgres://dev\n');
+  chmodSync(path.join(f.dir, '.env.local'), 0o600);
+  const made = new Worktrees(f.dir).create('rex-10');
+  assert.ok(typeof made !== 'string', String(made));
+  const copied = path.join(f.dir, made.path, '.env.local');
+  assert.equal(readFileSync(copied, 'utf8'), 'DATABASE_URL=postgres://dev\n');
+  assert.equal(statSync(copied).mode & 0o777, 0o600);
+});
+
+test(".worktreeinclude never copies a file git tracks, or one git doesn't ignore", (t) => {
+  const f = fixture(t);
+  include(f, [], ['config.json', 'notes.txt']);
+  writeFileSync(path.join(f.dir, 'config.json'), 'branch');
+  f.git('add', 'config.json');
+  f.git('commit', '-qm', 'config');
+  writeFileSync(path.join(f.dir, 'config.json'), 'local edit');
+  writeFileSync(path.join(f.dir, 'notes.txt'), 'untracked, not ignored');
+  const made = new Worktrees(f.dir).create('rex-11');
+  assert.ok(typeof made !== 'string', String(made));
+  assert.equal(readFileSync(path.join(f.dir, made.path, 'config.json'), 'utf8'), 'branch');
+  assert.ok(!existsSync(path.join(f.dir, made.path, 'notes.txt')));
+});
+
+test('a listed file that is missing is skipped, and globs and files in subfolders are honoured', (t) => {
+  const f = fixture(t);
+  include(f, ['*.local', 'secrets/'], ['.env.local', '*.local', 'secrets/api.key', 'missing.env']);
+  mkdirSync(path.join(f.dir, 'app'));
+  writeFileSync(path.join(f.dir, 'app', 'db.local'), 'db');
+  mkdirSync(path.join(f.dir, 'secrets'));
+  writeFileSync(path.join(f.dir, 'secrets', 'api.key'), 'key');
+  writeFileSync(path.join(f.dir, 'secrets', 'other.key'), 'not listed');
+  const made = new Worktrees(f.dir).create('rex-12');
+  assert.ok(typeof made !== 'string', String(made));
+  const wt = path.join(f.dir, made.path);
+  assert.equal(readFileSync(path.join(wt, 'app', 'db.local'), 'utf8'), 'db');
+  assert.equal(readFileSync(path.join(wt, 'secrets', 'api.key'), 'utf8'), 'key');
+  assert.ok(!existsSync(path.join(wt, 'secrets', 'other.key')));
+  assert.ok(!existsSync(path.join(wt, '.env.local')));
+  assert.ok(!existsSync(path.join(wt, 'missing.env')));
+});
+
+test('a project with no .worktreeinclude gets worktrees exactly as before', (t) => {
+  const f = fixture(t);
+  writeFileSync(path.join(f.dir, '.gitignore'), '.env.local\n');
+  f.git('add', '.gitignore');
+  f.git('commit', '-qm', 'ignore');
+  writeFileSync(path.join(f.dir, '.env.local'), 'secret');
+  const made = new Worktrees(f.dir).create('rex-13');
+  assert.ok(typeof made !== 'string', String(made));
+  assert.ok(!existsSync(path.join(f.dir, made.path, '.env.local')));
+  assert.equal(execFileSync('git', ['status', '--porcelain', '--ignored'], { cwd: path.join(f.dir, made.path), encoding: 'utf8' }), '');
+});
+
+test("each repository's worktree in a workspace gets its own project's .worktreeinclude files", (t) => {
+  const floor = fixture(t);
+  const other = fixture(t);
+  include(other, ['.env.local'], ['.env.local']);
+  writeFileSync(path.join(other.dir, '.env.local'), 'other');
+  const made = new Worktrees(other.dir).create('rex-14', 'other', floor.dir);
+  assert.ok(typeof made !== 'string', String(made));
+  assert.equal(readFileSync(path.join(floor.dir, made.path, '.env.local'), 'utf8'), 'other');
+});
+
+test('a worktree rebuilt after its folder was deleted gets the .worktreeinclude files again', async (t) => {
+  const f = fixture(t);
+  include(f, ['.env.local'], ['.env.local']);
+  writeFileSync(path.join(f.dir, '.env.local'), 'secret');
+  const trees = new Worktrees(f.dir);
+  const made = trees.create('rex-15');
+  assert.ok(typeof made !== 'string', String(made));
+  const abs = path.join(f.dir, made.path);
+  rmSync(abs, { recursive: true, force: true });
+  assert.deepEqual(await trees.restore(made), { from: 'here' });
+  assert.equal(readFileSync(path.join(abs, '.env.local'), 'utf8'), 'secret');
 });
