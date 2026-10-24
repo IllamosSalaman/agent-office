@@ -45,7 +45,7 @@ agent-office docker --port 4700
 
 ## What it keeps, and losing it
 
-Everything the Docker office keeps is on one Docker volume, `agent-office-data`, mounted at `/data` in the container: floors, workers and their worktrees, sessions, scrollback, sign-ins (Claude Code, the GitHub CLI) and settings. It outlives the container and new images.
+Everything the Docker office keeps is on one Docker volume, `agent-office-data`, mounted at `/data` in the container: floors, workers and their worktrees, sessions, scrollback, sign-ins (Claude Code, Codex, the GitHub CLI) and settings. It outlives the container and new images.
 
 **Deleting the volume deletes the Docker office**, with any work that was only in it: Docker Desktop's *Clean / Purge data*, *Volumes → Delete*, or `docker volume rm agent-office-data` all do that. Push your workers' branches before you do.
 
