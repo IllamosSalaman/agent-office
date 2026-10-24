@@ -78,6 +78,7 @@ Usage:
   agent-office prune [dir] [--dry-run] [--force]
   agent-office accounts [list|invite|revoke|role|password] ...
   agent-office tunnel [office@address | url]
+  agent-office docker [--port <n>]
 
 Runs the office. Every project is a floor of the building: ride the elevator,
 pick one of the repositories your \`gh\` login can see, and the office clones it
@@ -104,6 +105,10 @@ Commands:
   tunnel                  On your own computer, for an office that runs somewhere
                           else: every web server a worker starts there opens on the
                           same port here, by itself (see tunnel --help)
+  docker                  Run this office in a local Docker container instead, so
+                          its workers can't touch anything outside it: on
+                          127.0.0.1:4610, its data on a Docker volume, your browser
+                          opened signed in (see docker --help)
 
 Options:
       --home <dir>        Where the office keeps its data when no [dir] is given
@@ -242,7 +247,7 @@ export function loadConfig(argv: string[]): Config {
   let weather = process.env.AGENT_OFFICE_WEATHER || '';
   let realTimeSky = process.env.AGENT_OFFICE_SKY_CLOCK === 'real';
   const iceServers: RTCIceServerLike[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
-  // A container can't take --turn (deploy/container/compose.yaml), so the TURN servers come from the environment too.
+  // A container's start script (deploy/container/start.sh) passes no --turn, so the TURN servers come from the environment too.
   for (const url of (process.env.AGENT_OFFICE_TURN ?? '').split(/\s+/).filter(Boolean)) iceServers.push(parseTurn(url));
 
   for (let i = 0; i < argv.length; i++) {

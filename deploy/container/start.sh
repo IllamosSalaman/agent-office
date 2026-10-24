@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Starts the office in its container (deploy/container/Dockerfile): sshd on port 22, then the
-# office as agentoffice on 127.0.0.1:4600.
+# office as agentoffice on 127.0.0.1:4600. In local mode (agent-office docker, below) there's no
+# sshd, and the office listens on the container's network instead.
 #
 # Everything that has to outlive a restart or a redeploy lives on the volume at /data:
 #   /data/home   agentoffice's home: the office's data in ~/agent-office (password, accounts, floors,
@@ -21,21 +22,29 @@ AS_USER=(setpriv --reuid=$RUN_USER --regid=$RUN_USER --init-groups
 
 say() { echo "agent-office-container: $*"; }
 
+# Local mode is `agent-office docker` on someone's own computer (src/server/docker/), the only thing
+# that sets AGENT_OFFICE_LOCAL_MODE: no sshd and no admin keys, and the office listens on the
+# container's network, on $PORT, which docker publishes on the computer's 127.0.0.1 only.
+LOCAL_MODE=${AGENT_OFFICE_LOCAL_MODE:-}
+
 mountpoint -q $DATA || say "nothing is mounted on $DATA: the office forgets everything when this container goes"
 # sshd refuses keys under a directory others can write to.
-install -d -m 755 -o root -g root $DATA $DATA/team
-install -d -m 700 -o root -g root $DATA/ssh
-[[ -f $DATA/team/authorized_keys ]] || install -m 644 -o root -g root /dev/null $DATA/team/authorized_keys
-if [[ ! -f $DATA/ssh/ssh_host_ed25519_key ]]; then
-  say "making the SSH host key (first start)"
-  ssh-keygen -q -t ed25519 -N '' -C agent-office -f $DATA/ssh/ssh_host_ed25519_key
+install -d -m 755 -o root -g root $DATA
+if [[ $LOCAL_MODE != 1 ]]; then
+  install -d -m 755 -o root -g root $DATA/team
+  install -d -m 700 -o root -g root $DATA/ssh
+  [[ -f $DATA/team/authorized_keys ]] || install -m 644 -o root -g root /dev/null $DATA/team/authorized_keys
+  if [[ ! -f $DATA/ssh/ssh_host_ed25519_key ]]; then
+    say "making the SSH host key (first start)"
+    ssh-keygen -q -t ed25519 -N '' -C agent-office -f $DATA/ssh/ssh_host_ed25519_key
+  fi
+  install -m 600 $DATA/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
+  install -m 644 $DATA/ssh/ssh_host_ed25519_key.pub /etc/ssh/ssh_host_ed25519_key.pub
+  install -d -m 755 /etc/agent-office
+  printf '%s\n' "${AGENT_OFFICE_ADMIN_KEYS:-}" >/etc/agent-office/admin_keys
+  chmod 644 /etc/agent-office/admin_keys
+  unset AGENT_OFFICE_ADMIN_KEYS
 fi
-install -m 600 $DATA/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
-install -m 644 $DATA/ssh/ssh_host_ed25519_key.pub /etc/ssh/ssh_host_ed25519_key.pub
-install -d -m 755 /etc/agent-office
-printf '%s\n' "${AGENT_OFFICE_ADMIN_KEYS:-}" >/etc/agent-office/admin_keys
-chmod 644 /etc/agent-office/admin_keys
-unset AGENT_OFFICE_ADMIN_KEYS
 
 install -d -m 755 -o $RUN_USER -g $RUN_USER $RUN_HOME
 for f in .bashrc .profile; do
@@ -43,20 +52,22 @@ for f in .bashrc .profile; do
 done
 cd $RUN_HOME
 
-# The address teammates SSH to: Railway's TCP proxy in front of port 22 (host:port). deploy/fly.sh
-# sets it itself: the app's IPv4 address and its port.
-if [[ -z "${AGENT_OFFICE_PUBLIC_HOST:-}" && -n "${RAILWAY_TCP_PROXY_DOMAIN:-}" && -n "${RAILWAY_TCP_PROXY_PORT:-}" ]]; then
-  export AGENT_OFFICE_PUBLIC_HOST=$RAILWAY_TCP_PROXY_DOMAIN:$RAILWAY_TCP_PROXY_PORT
-fi
-# On Fly.io, port 22 is Fly's own SSH server (`fly ssh console`), so deploy/fly.sh moves this one.
-SSHD_PORT=${AGENT_OFFICE_SSHD_PORT:-22}
-[[ "$SSHD_PORT" =~ ^[0-9]+$ ]] || SSHD_PORT=22
+if [[ $LOCAL_MODE != 1 ]]; then
+  # The address teammates SSH to: Railway's TCP proxy in front of port 22 (host:port). deploy/fly.sh
+  # sets it itself: the app's IPv4 address and its port.
+  if [[ -z "${AGENT_OFFICE_PUBLIC_HOST:-}" && -n "${RAILWAY_TCP_PROXY_DOMAIN:-}" && -n "${RAILWAY_TCP_PROXY_PORT:-}" ]]; then
+    export AGENT_OFFICE_PUBLIC_HOST=$RAILWAY_TCP_PROXY_DOMAIN:$RAILWAY_TCP_PROXY_PORT
+  fi
+  # On Fly.io, port 22 is Fly's own SSH server (`fly ssh console`), so deploy/fly.sh moves this one.
+  SSHD_PORT=${AGENT_OFFICE_SSHD_PORT:-22}
+  [[ "$SSHD_PORT" =~ ^[0-9]+$ ]] || SSHD_PORT=22
 
-mkdir -p /run/sshd
-/usr/sbin/sshd -t
-# Brought back if it ever dies, so the tunnels keep working.
-(while :; do /usr/sbin/sshd -D -e -p "$SSHD_PORT"; sleep 2; done) &
-say "sshd is listening on port $SSHD_PORT${AGENT_OFFICE_PUBLIC_HOST:+ (reached at $AGENT_OFFICE_PUBLIC_HOST)}"
+  mkdir -p /run/sshd
+  /usr/sbin/sshd -t
+  # Brought back if it ever dies, so the tunnels keep working.
+  (while :; do /usr/sbin/sshd -D -e -p "$SSHD_PORT"; sleep 2; done) &
+  say "sshd is listening on port $SSHD_PORT${AGENT_OFFICE_PUBLIC_HOST:+ (reached at $AGENT_OFFICE_PUBLIC_HOST)}"
+fi
 
 if [[ ! -x $RUN_HOME/.local/bin/claude ]]; then
   say "installing Claude Code in $RUN_HOME/.local (first start)"
@@ -79,4 +90,9 @@ if [[ ! -f $RUN_HOME/agent-office/.agent-office/projects-folder.json ]]; then
 fi
 "${AS_USER[@]}" node /usr/local/lib/agent-office/onboard.js $RUN_HOME/workspace
 
+if [[ $LOCAL_MODE == 1 ]]; then
+  OFFICE_PORT=${PORT:-4600}
+  [[ "$OFFICE_PORT" =~ ^[0-9]+$ ]] || OFFICE_PORT=4600
+  exec "${AS_USER[@]}" node /opt/agent-office/bin/agent-office.js --host 0.0.0.0 --port "$OFFICE_PORT" --no-open
+fi
 exec "${AS_USER[@]}" node /opt/agent-office/bin/agent-office.js --host 127.0.0.1 --port 4600 --no-open

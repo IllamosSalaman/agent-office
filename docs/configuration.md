@@ -61,4 +61,11 @@ agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--n
   a worker starts there opens on the same port here, by itself, and closes when
   the worker stops it. Given an SSH address it opens the tunnel to the office too.
   See docs/tunnel.md.
+
+agent-office docker [--port <n>]
+
+  Runs the office in a local Docker container instead, published on this
+  computer's 127.0.0.1:4610 (or --port), with its data on the Docker volume
+  agent-office-data. Opens your browser signed in; Ctrl-C stops it. From a
+  checkout, npm run docker does the same. See docs/docker.md.
 ```
