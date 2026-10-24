@@ -4,6 +4,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { LostBranch, WorktreeState } from '../shared/protocol.js';
+import { copyWorktreeInclude, WORKTREE_INCLUDE } from './worktree-include.js';
 
 export type { WorktreeCleanup, WorktreeState } from '../shared/protocol.js';
 
@@ -65,9 +66,22 @@ export class Worktrees {
       const rel = path.join(WORKTREES_DIR, slug, sub ?? '');
       const branch = `${BRANCH_PREFIX}${slug}`;
       this.gitSync(['worktree', 'add', '-b', branch, path.resolve(root, rel), base]);
+      this.include(path.resolve(root, rel));
       return { path: rel, branch, base, from, note };
     } catch (err) {
       return `Could not create a git worktree: ${gitError(err)}`;
+    }
+  }
+
+  /**
+   * Gives a worktree just made the files the project's .worktreeinclude lists (its `.env.local`, say).
+   * Never fails the worktree: what went wrong goes to the office's log.
+   */
+  private include(abs: string): void {
+    try {
+      copyWorktreeInclude(this.dir, abs);
+    } catch (err) {
+      console.warn(`agent-office: couldn't copy the ${WORKTREE_INCLUDE} files into ${abs}: ${gitError(err)}`);
     }
   }
 
@@ -217,6 +231,7 @@ export class Worktrees {
         const base = wt.base && (await this.git(['cat-file', '-e', `${wt.base}^{commit}`]).then(() => true, () => false)) ? wt.base : 'HEAD';
         await this.git(['worktree', 'add', '-b', wt.branch, abs, base]);
       }
+      this.include(abs);
       return { from };
     } catch (err) {
       return { error: gitError(err) };
